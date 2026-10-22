@@ -15,6 +15,6 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  output: 'standalone', // 关键配置：提取轻量运行依赖
 };
-
 export default nextConfig;
