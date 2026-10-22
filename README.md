@@ -1,6 +1,8 @@
 # 个人博客
 
-一个基于 Next.js 16 App Router 和本地 Markdown 的轻量博客，部署方式是 `standalone` + Node + Nginx。
+一个基于 Next.js 16 App Router 和本地 Markdown 的纯静态博客。`next build` 生成 `out/`，不需要 Node 运行时，直接交给 Nginx 或任意静态文件服务器托管。
+
+> 当前还没有域名，也没有开放公网端口。本地开发使用 `http://localhost:3000`，构建产物里的站点 URL 默认也会回退到 `http://localhost:3000`。
 
 ## 环境要求
 
@@ -25,22 +27,21 @@ npm run dev
 ```bash
 npm run lint
 npm run typecheck
-npm run build
 ```
 
 ## 环境变量
 
-站点 URL 用于 `metadataBase`、`sitemap.xml`、`robots.txt` 和 RSS。构建时读取：
+站点 URL 用于 `metadataBase`、`sitemap.xml`、`robots.txt` 和 RSS。它是**构建时**变量：
 
 ```bash
 NEXT_PUBLIC_SITE_URL=https://blog.example.com npm run build
 ```
 
-本地不设置时会回退到 `http://localhost:3000`。生产环境必须在构建时传入真实域名，否则 sitemap/RSS 里会写 localhost。
+不设置时会回退到 `http://localhost:3000`。等有了域名再设置即可，现在本地不需要创建 `.env`。
 
 ## 写文章
 
-在 `posts/` 下新建 Markdown 文件，文件名使用小写 kebab-case，例如 `my-first-post.md`。
+在 `posts/` 下新建 Markdown 文件，文件名使用小写字母、数字、连字符或下划线，例如 `my-first-post.md`。
 
 ```md
 ---
@@ -56,115 +57,99 @@ summary: "一句话摘要，用于首页、SEO 和 RSS。"
 
 约定：
 
-- `date` 请加引号。不加引号时 YAML 可能把它解析成 `Date` 对象，渲染时会出问题。
+- `date` 请加引号。不加引号时 YAML 可能把它解析成 `Date` 对象。
 - 代码围栏要闭合，避免后续内容被吞进代码块。
-- 文件名只允许小写字母、数字、连字符和下划线，路由会按文件名生成 `/posts/<slug>`。
+- 文件名会直接作为 `/posts/<slug>` 的 slug。
+- 修改或新增文章后需要重新构建；静态导出没有运行时读取 Markdown 的能力。
 
-## 构建与启动（standalone）
+## 构建与本地预览
 
 ```bash
-npm ci
 npm run build
 ```
 
-复制 standalone 不会自动带上的静态资源：
+产物在 `out/`：
 
 ```bash
-cp -r public .next/standalone/
-cp -r .next/static .next/standalone/.next/
+out/
+├── index.html
+├── 404.html
+├── posts/
+│   ├── first-post.html
+│   └── ...
+├── sitemap.xml
+├── robots.txt
+└── rss.xml
 ```
 
-启动：
+本地预览：
 
 ```bash
-PORT=3000 HOSTNAME=127.0.0.1 NODE_ENV=production \
-  node .next/standalone/server.js
+npm run start
 ```
 
-不要用 `npm start`（`next start`）来运行 standalone 产物，Next.js 会明确提示改用 `server.js`。
+它等价于 `npx serve@latest out`，默认打开 `http://localhost:3000`。不启动也不影响代码本身。
 
-### systemd 示例
+静态导出的限制：
 
-```ini
-[Unit]
-Description=my-blog
-After=network.target
+- 不支持 `cookies()`、`headers()`、Server Actions、ISR、运行时 API；
+- 动态路由必须通过 `generateStaticParams` 在构建期列出来；
+- 新增文章后要重新 `build` 并重新上传 `out/`。
 
-[Service]
-Type=simple
-WorkingDirectory=/var/www/my-blog/.next/standalone
-ExecStart=/usr/bin/node server.js
-Environment=PORT=3000
-Environment=HOSTNAME=127.0.0.1
-Environment=NODE_ENV=production
-User=www-data
-Group=www-data
-Restart=always
-RestartSec=3
+## 部署到 Nginx
 
-[Install]
-WantedBy=multi-user.target
-```
-
-修改后：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now my-blog
-sudo systemctl status my-blog
-```
-
-## Nginx 反向代理
-
-Node 只监听 `127.0.0.1:3000`，由 Nginx 对外提供 80/443：
+把 `out/` 上传到服务器，例如 `/var/www/blog`：
 
 ```nginx
 server {
     listen 80;
     server_name blog.example.com;
 
+    root /var/www/blog;
+    index index.html;
+
     location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        try_files $uri $uri.html $uri/ =404;
     }
 
     location /_next/static/ {
-        proxy_pass http://127.0.0.1:3000;
         add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    error_page 404 /404.html;
+    location = /404.html {
+        internal;
     }
 }
 ```
 
-建议同时配置：
+有域名和 HTTPS 后再补：
 
 - `X-Content-Type-Options: nosniff`
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `X-Frame-Options: SAMEORIGIN`
-- HTTPS 开启后再加 `Strict-Transport-Security`
-- 安全组只开放 22、80、443，不要暴露 3000
+- `Strict-Transport-Security`（只在 HTTPS 下加）
+- 安全组只开放 22、80、443
 
 ## 2C2G 服务器注意事项
 
-- 运行阶段 Node 通常几十到一百多 MB，2GB 内存足够。
-- `npm ci` 和 `next build` 的瞬时内存更高，建议准备 2G Swap 兜底，或本地构建后上传产物。
+- 静态导出后不需要 Node 进程，2C2G 只跑 Nginx 非常轻。
+- `npm ci` 和 `next build` 的瞬时内存比运行时高，建议准备 2G Swap 兜底，或在本地构建后上传 `out/`。
 - 不要在服务器上跑 `npm run dev`。
-- 首次部署前先确认 `.next/standalone/posts` 是否存在。Next.js 的 tracing 通常会带上它，但如果以后改成运行时从外部目录读取文章，需要额外配置 `outputFileTracingIncludes`。
+- 现在没有开放端口，也不需要启动任何服务；等部署时再配置 Nginx 和防火墙。
 
 ## 目录结构
 
 ```text
 app/                页面、布局、metadata 路由
-  posts/[slug]/     文章详情页
+  posts/[slug]/     文章详情页（构建期生成所有 slug）
   sitemap.ts        sitemap.xml
   robots.ts         robots.txt
-  rss.xml/route.ts  RSS
+  rss.xml/route.ts  RSS（force-static）
 lib/
-  posts.ts          Markdown 读取、解析、消毒
+  posts.ts          Markdown 读取、解析、消毒、日期归一化
   site.ts           站点配置
 posts/              Markdown 文章
 public/             静态资源
+out/                构建产物（git 忽略）
 ```

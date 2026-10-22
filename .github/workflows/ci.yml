@@ -19,5 +19,5 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
-      # P0 修复后启用：让 CI 同时验证生产构建
+      # 本地 `npm run build` 验证通过后再启用
       # - run: npm run build
