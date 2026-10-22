@@ -1,12 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  experimental: {
-    agentFeedback: true,
-  },
-  cacheComponents: true,
-  partialPrefetching: true,
   turbopack: {
     rules: {
       "*.css": {
@@ -15,6 +9,8 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  output: 'standalone', // 关键配置：提取轻量运行依赖
+  // 纯静态导出：构建产物在 out/，由 Nginx 或任意静态文件服务器托管
+  output: "export",
 };
+
 export default nextConfig;
