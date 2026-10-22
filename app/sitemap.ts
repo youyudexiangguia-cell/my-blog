@@ -2,6 +2,8 @@ import type { MetadataRoute } from 'next';
 import { getAllPosts } from '@/lib/posts';
 import { siteConfig } from '@/lib/site';
 
+export const dynamic = 'force-static';
+
 function toDate(value: string): Date | undefined {
   if (!value) return undefined;
 

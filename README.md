@@ -109,7 +109,8 @@ server {
     index index.html;
 
     location / {
-        try_files $uri $uri.html $uri/ =404;
+        # 先匹配 .html，避免命中 Next 导出的 RSC 目录
+        try_files $uri.html $uri $uri/ =404;
     }
 
     location /_next/static/ {
